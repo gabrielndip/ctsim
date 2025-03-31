@@ -1,0 +1,17 @@
+Package: ctsim
+Title: Clinical Trial Simulation Framework
+Version: 0.0.1
+Authors@R: person('Gabriel Teku', email = 'gabbyteku@gmail.com', role = c('aut', 'cre'))
+Description: A framework for simulating clinical trials with survival analysis and Bayesian updating.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports:
+    tidyverse,
+    survival,
+    flexsurv,
+    brms,
+    msm,
+    here

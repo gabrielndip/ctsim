@@ -1,0 +1,1 @@
+style_pkg(scope = "spaces", strict = TRUE, indent_by = 2)

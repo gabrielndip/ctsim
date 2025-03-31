@@ -1,0 +1,6 @@
+linters: with_defaults(
+  line_length_linter(120),
+  object_length_linter(40),
+  object_name_linter(styles = c("snake_case")),
+  assignment_linter = NULL
+)
