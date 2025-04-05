@@ -80,16 +80,113 @@ run_trial_simulation <- function(
 #' @param sim_result Simulation results object
 #' @return Updated simulation results with events data
 simulate_trial_events <- function(sim_result) {
-  # Placeholder function - to be implemented
-  # This function will simulate the actual trial timeline, including:
-  # - Enrollment of participants over time
-  # - Event occurrences based on arm-specific distributions
-  # - Dropout events
-  # - Trial stopping based on interim analyses
+  # Extract participant data
+  participants <- sim_result$participants
+  config <- sim_result$config
   
-  # This will be implemented in detail later
-  sim_result$events <- data.frame(
-    message = "This is a placeholder. Event simulation will be implemented."
+  # Create a sorted timeline of all events
+  event_timeline <- data.frame(
+    participant_id = character(),
+    time = numeric(),
+    event_type = character(),
+    arm = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Add enrollment events to timeline
+  enrollment_events <- data.frame(
+    participant_id = participants$participant_id,
+    time = participants$enrollment_time,
+    event_type = "enrollment",
+    arm = participants$arm,
+    stringsAsFactors = FALSE
+  )
+  event_timeline <- rbind(event_timeline, enrollment_events)
+  
+  # Add observed events (event or censoring) to timeline
+  observed_events <- data.frame(
+    participant_id = participants$participant_id,
+    time = participants$enrollment_time + participants$observed_time,
+    event_type = ifelse(participants$event_status == 1, "event", "censoring"),
+    arm = participants$arm,
+    stringsAsFactors = FALSE
+  )
+  event_timeline <- rbind(event_timeline, observed_events)
+  
+  # Sort by time
+  event_timeline <- event_timeline[order(event_timeline$time), ]
+  
+  # Initialize counters for tracking trial progress
+  enrolled_count <- 0
+  event_count <- 0
+  censored_count <- 0
+  arm_counts <- setNames(rep(0, length(names(config$arms))), names(config$arms))
+  arm_event_counts <- setNames(rep(0, length(names(config$arms))), names(config$arms))
+  
+  # Initialize detailed event log
+  event_log <- data.frame(
+    time = numeric(),
+    participant_id = character(),
+    event_type = character(),
+    arm = character(),
+    enrolled_count = numeric(),
+    event_count = numeric(),
+    censored_count = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Process events in chronological order
+  for (i in 1:nrow(event_timeline)) {
+    event <- event_timeline[i, ]
+    
+    # Update counters based on event type
+    if (event$event_type == "enrollment") {
+      enrolled_count <- enrolled_count + 1
+      arm_counts[event$arm] <- arm_counts[event$arm] + 1
+    } else if (event$event_type == "event") {
+      event_count <- event_count + 1
+      arm_event_counts[event$arm] <- arm_event_counts[event$arm] + 1
+    } else if (event$event_type == "censoring") {
+      censored_count <- censored_count + 1
+    }
+    
+    # Add to event log
+    event_log <- rbind(event_log, data.frame(
+      time = event$time,
+      participant_id = event$participant_id,
+      event_type = event$event_type,
+      arm = event$arm,
+      enrolled_count = enrolled_count,
+      event_count = event_count,
+      censored_count = censored_count,
+      stringsAsFactors = FALSE
+    ))
+    
+    # Check if we've reached the required number of events for trial completion
+    if (event_count >= config$events_required) {
+      sim_result$trial_completion_time <- event$time
+      break
+    }
+  }
+  
+  # If trial did not reach required events, set completion time to the last event time
+  if (is.na(sim_result$trial_completion_time) && nrow(event_log) > 0) {
+    sim_result$trial_completion_time <- max(event_log$time)
+  }
+  
+  # Update simulation results
+  sim_result$events <- event_log
+  sim_result$event_count <- event_count
+  
+  # Calculate additional metrics
+  sim_result$metrics <- list(
+    enrollment_duration = ifelse(enrolled_count == config$n_subjects,
+                               max(participants$enrollment_time), NA),
+    study_duration = sim_result$trial_completion_time,
+    event_rate = event_count / enrolled_count,
+    censoring_rate = censored_count / enrolled_count,
+    arm_enrollment = arm_counts,
+    arm_events = arm_event_counts
   )
   
   return(sim_result)
