@@ -197,16 +197,146 @@ simulate_trial_events <- function(sim_result) {
 #' @param sim_result Simulation results object
 #' @return Updated simulation results with interim analyses results
 run_interim_analyses <- function(sim_result) {
-  # Placeholder function - to be implemented
-  # This function will:
-  # - Check if we've reached interim analysis points
-  # - Run the appropriate analyses
-  # - Apply decision rules to determine if trial should continue/stop
+  # Extract configuration and event data
+  config <- sim_result$config
+  events <- sim_result$events
+  participants <- sim_result$participants
   
-  # This will be implemented in detail later
-  sim_result$analyses <- list(
-    message = "This is a placeholder. Interim analyses will be implemented."
-  )
+  # If no interim analyses are defined, return unchanged
+  if (length(config$interim_analyses) == 0) {
+    sim_result$analyses <- list()
+    return(sim_result)
+  }
+  
+  # Initialize list to store interim analysis results
+  interim_results <- list()
+  
+  # Process each interim analysis
+  for (i in seq_along(config$interim_analyses)) {
+    interim_config <- config$interim_analyses[[i]]
+    
+    # Determine when this interim analysis should occur
+    if (interim_config$type == "events") {
+      # Based on number of events
+      event_threshold <- round(interim_config$timing * config$events_required)
+      
+      # Find the timepoint when we reach this number of events
+      event_rows <- which(events$event_type == "event")
+      if (length(event_rows) >= event_threshold) {
+        analysis_time <- events$time[event_rows[event_threshold]]
+        analysis_triggered <- TRUE
+      } else {
+        analysis_triggered <- FALSE
+      }
+    } else if (interim_config$type == "time") {
+      # Based on calendar time
+      analysis_time <- interim_config$timing
+      analysis_triggered <- max(events$time) >= analysis_time
+    }
+    
+    # Skip if analysis wasn't triggered
+    if (!analysis_triggered) {
+      next
+    }
+    
+    # Select data up to the analysis timepoint
+    analysis_events <- events[events$time <= analysis_time, ]
+    current_participants <- participants
+    
+    # Update event status and observed time for participants based on interim analysis time
+    for (p in 1:nrow(current_participants)) {
+      enrollment_time <- current_participants$enrollment_time[p]
+      event_time_absolute <- enrollment_time + current_participants$event_time[p]
+      censoring_time_absolute <- enrollment_time + current_participants$censoring_time[p]
+      
+      # If the event or censoring would occur after analysis time, censor at analysis time
+      if (event_time_absolute > analysis_time && censoring_time_absolute > analysis_time) {
+        current_participants$event_status[p] <- 0  # Censored
+        current_participants$observed_time[p] <- analysis_time - enrollment_time
+        current_participants$retention_status[p] <- "Ongoing"
+      }
+    }
+    
+    # Run survival analysis on interim data
+    analysis_result <- try({
+      # Fit Cox proportional hazards model
+      survival_formula <- Surv(observed_time, event_status) ~ arm
+      cox_model <- coxph(survival_formula, data = current_participants)
+      
+      # Extract hazard ratio (treatment vs. control)
+      hr <- exp(coef(cox_model)["armtreatment"])
+      hr_ci <- exp(confint(cox_model)["armtreatment", ])
+      p_value <- summary(cox_model)$coefficients["armtreatment", "Pr(>|z|)"]
+      
+      # Calculate event rates by arm
+      arm_event_rates <- tapply(current_participants$event_status, 
+                                current_participants$arm, 
+                                function(x) sum(x) / length(x))
+      
+      list(
+        time = analysis_time,
+        event_count = sum(current_participants$event_status),
+        enrolled_count = nrow(current_participants),
+        cox_model = cox_model,
+        hazard_ratio = hr,
+        hr_ci_lower = hr_ci[1],
+        hr_ci_upper = hr_ci[2],
+        p_value = p_value,
+        arm_event_rates = arm_event_rates
+      )
+    }, silent = TRUE)
+    
+    # Handle any errors in analysis
+    if (inherits(analysis_result, "try-error")) {
+      analysis_result <- list(
+        time = analysis_time,
+        event_count = sum(current_participants$event_status),
+        enrolled_count = nrow(current_participants),
+        error = TRUE,
+        error_message = attr(analysis_result, "condition")$message
+      )
+    }
+    
+    # Apply decision rules
+    if (!inherits(analysis_result, "try-error") && !is.null(interim_config$decision_rules)) {
+      # Apply efficacy and futility rules
+      if ("efficacy" %in% names(interim_config$decision_rules)) {
+        analysis_result$stop_for_efficacy <- interim_config$decision_rules$efficacy(analysis_result)
+      } else {
+        analysis_result$stop_for_efficacy <- FALSE
+      }
+      
+      if ("futility" %in% names(interim_config$decision_rules)) {
+        analysis_result$stop_for_futility <- interim_config$decision_rules$futility(analysis_result)
+      } else {
+        analysis_result$stop_for_futility <- FALSE
+      }
+      
+      # Determine if trial should stop
+      analysis_result$stop_trial <- analysis_result$stop_for_efficacy || analysis_result$stop_for_futility
+    } else {
+      analysis_result$stop_for_efficacy <- FALSE
+      analysis_result$stop_for_futility <- FALSE
+      analysis_result$stop_trial <- FALSE
+    }
+    
+    # Store the interim analysis result
+    interim_results[[i]] <- analysis_result
+    
+    # If decision is to stop the trial, break out of the loop
+    if (analysis_result$stop_trial) {
+      sim_result$trial_stopped_early <- TRUE
+      sim_result$trial_completion_time <- analysis_time
+      sim_result$stop_reason <- ifelse(analysis_result$stop_for_efficacy, "efficacy", "futility")
+      break
+    }
+  }
+  
+  # Update simulation results
+  sim_result$analyses <- interim_results
+  if (length(interim_results) > 0) {
+    sim_result$interim_decisions <- sapply(interim_results, function(x) x$stop_trial)
+  }
   
   return(sim_result)
 }
