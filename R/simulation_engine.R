@@ -346,15 +346,101 @@ run_interim_analyses <- function(sim_result) {
 #' @param sim_result Simulation results object
 #' @return Updated simulation results with final analysis
 run_final_analysis <- function(sim_result) {
-  # Placeholder function - to be implemented
-  # This function will:
-  # - Run the final analysis using survival methods
-  # - Calculate key metrics like hazard ratio, p-value, etc.
+  # Check if trial was stopped early at an interim analysis
+  if (!is.null(sim_result$trial_stopped_early) && sim_result$trial_stopped_early) {
+    # Use the last interim analysis as the final analysis
+    last_interim <- sim_result$analyses[[length(sim_result$analyses)]]
+    sim_result$final_analysis <- last_interim
+    sim_result$final_analysis$is_interim <- TRUE
+    return(sim_result)
+  }
   
-  # This will be implemented in detail later
-  sim_result$final_analysis <- list(
-    message = "This is a placeholder. Final analysis will be implemented."
-  )
+  # Extract participant data at trial completion
+  participants <- sim_result$participants
+  config <- sim_result$config
+  
+  # If trial completed with the required number of events, run final analysis
+  try({
+    # Fit Cox proportional hazards model
+    survival_formula <- Surv(observed_time, event_status) ~ arm
+    cox_model <- coxph(survival_formula, data = participants)
+    
+    # Extract hazard ratio (treatment vs. control)
+    hr <- exp(coef(cox_model)["armtreatment"])
+    hr_ci <- exp(confint(cox_model)["armtreatment", ])
+    p_value <- summary(cox_model)$coefficients["armtreatment", "Pr(>|z|)"]
+    
+    # Conduct log-rank test
+    surv_diff <- survdiff(survival_formula, data = participants)
+    log_rank_p <- 1 - pchisq(surv_diff$chisq, df = length(surv_diff$n) - 1)
+    
+    # Calculate Kaplan-Meier estimates for plotting
+    km_fit <- survfit(Surv(observed_time, event_status) ~ arm, data = participants)
+    
+    # Calculate median survival time by arm
+    median_survival <- summary(km_fit)$table[, "median"]
+    
+    # Calculate event rates by arm
+    arm_event_counts <- tapply(participants$event_status, participants$arm, sum)
+    arm_totals <- table(participants$arm)
+    arm_event_rates <- arm_event_counts / arm_totals
+    
+    # Perform parametric survival analysis using Weibull model
+    weibull_model <- try(survreg(survival_formula, data = participants, dist = "weibull"), silent = TRUE)
+    if (!inherits(weibull_model, "try-error")) {
+      # Convert to Weibull parameters in the usual parameterization
+      weibull_shape <- 1 / weibull_model$scale
+      weibull_scale_control <- exp(coef(weibull_model)[1])
+      weibull_scale_treatment <- exp(coef(weibull_model)[1] + coef(weibull_model)[2])
+      
+      parametric_models <- list(
+        weibull = list(
+          model = weibull_model,
+          shape = weibull_shape,
+          scale_control = weibull_scale_control,
+          scale_treatment = weibull_scale_treatment
+        )
+      )
+    } else {
+      parametric_models <- list(
+        error = TRUE,
+        error_message = attr(weibull_model, "condition")$message
+      )
+    }
+    
+    # Store final analysis results
+    sim_result$final_analysis <- list(
+      time = sim_result$trial_completion_time,
+      event_count = sum(participants$event_status),
+      enrolled_count = nrow(participants),
+      cox_model = cox_model,
+      hazard_ratio = hr,
+      hr_ci_lower = hr_ci[1],
+      hr_ci_upper = hr_ci[2],
+      p_value = p_value,
+      log_rank_p = log_rank_p,
+      km_fit = km_fit,
+      median_survival = median_survival,
+      arm_event_rates = arm_event_rates,
+      parametric_models = parametric_models,
+      is_interim = FALSE
+    )
+    
+    # Determine trial outcome (success/failure)
+    sim_result$success <- p_value < 0.05  # Default threshold
+  }, silent = TRUE)
+  
+  # Handle errors in analysis
+  if (is.null(sim_result$final_analysis) || !is.list(sim_result$final_analysis)) {
+    sim_result$final_analysis <- list(
+      time = sim_result$trial_completion_time,
+      event_count = sum(participants$event_status),
+      enrolled_count = nrow(participants),
+      error = TRUE,
+      error_message = "Error in final analysis"
+    )
+    sim_result$success <- FALSE
+  }
   
   return(sim_result)
 }
