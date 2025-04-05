@@ -9,16 +9,7 @@ Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
-Imports:
-    tidyverse,
-    ggplot2,
-    survival,
-    flexsurv,
-    brms,
-    msm,
-    here
-Suggests:
-    knitr,
-    rmarkdown,
-    testthat
+Imports: tidyverse, ggplot2, survival, flexsurv, brms, msm, here
+Suggests: knitr, rmarkdown, testthat
 VignetteBuilder: knitr
+Built: R 4.4.3; ; 2025-04-05 09:59:13 UTC; unix

@@ -1,0 +1,94 @@
+* using log directory '/Users/gabrielteku/ctsim/..Rcheck'
+* using R version 4.4.3 (2025-02-28)
+* using platform: aarch64-apple-darwin20
+* R was compiled by
+    Apple clang version 14.0.0 (clang-1400.0.29.202)
+    GNU Fortran (GCC) 12.2.0
+* running under: macOS Sequoia 15.3.2
+* using session charset: ASCII
+* checking for file './DESCRIPTION' ... OK
+* this is package 'ctsim' version '0.0.1'
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... NOTE
+Found the following hidden files and directories:
+  .RData
+  .Rhistory
+  .Rprofile
+  .gitignore
+  .lintr
+  .styler
+  renv/.gitignore
+  ..Rcheck
+  .Rproj.user
+  .git
+These were most likely included in error. See section 'Package
+structure' in the 'Writing R Extensions' manual.
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package 'ctsim' can be installed ... WARNING
+Found the following significant warnings:
+  Warning: replacing previous import 'flexsurv::qgeneric' by 'msm::qgeneric' when loading 'ctsim'
+See '/Users/gabrielteku/ctsim/..Rcheck/00install.out' for details.
+* checking installed package size ... OK
+* checking package directory ... OK
+* checking DESCRIPTION meta-information ... NOTE
+Checking should be performed on sources prepared by 'R CMD build'.
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... WARNING
+Found the following directory with the name of a check directory:
+  ./..Rcheck
+Most likely, these were included erroneously.
+Subdirectory 'data' contains no data sets.
+Subdirectory 'inst' contains no files.
+* checking code files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies ... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking loading without being on the library search path ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... OK
+* checking for missing documentation entries ... WARNING
+Undocumented code objects:
+  'add_interim_analysis' 'adjust_params_for_scenario'
+  'apply_bayesian_updates' 'create_bayesian_prior'
+  'create_simulation_results' 'create_trial_config'
+  'example_trial_with_priors' 'export_simulation_results'
+  'finalize_participant_data' 'generate_censoring_times'
+  'generate_enrollment_times' 'generate_event_times'
+  'generate_participants' 'generate_stratified_participants'
+  'generate_test_data' 'plot_simulation_results' 'run_final_analysis'
+  'run_interim_analyses' 'run_trial_simulation' 'simulate_trial_events'
+  'summarize_simulations'
+All user-level objects in a package should have documentation entries.
+See chapter 'Writing R documentation files' in the 'Writing R
+Extensions' manual.
+* checking contents of 'data' directory ... OK
+* checking data for non-ASCII characters ... OK
+* checking LazyData ... OK
+* checking data for ASCII and uncompressed saves ... OK
+* checking files in 'vignettes' ... WARNING
+Files in the 'vignettes' directory but no files in 'inst/doc':
+  'ultimate_guide.Rmd'
+* checking examples ... NONE
+* checking for unstated dependencies in vignettes ... OK
+* checking package vignettes ... WARNING
+Directory 'inst/doc' does not exist.
+Package vignette without corresponding single PDF/HTML:
+  'ultimate_guide.Rmd'
+* checking re-building of vignette outputs ... OK
+* checking PDF version of manual ... OK
+* DONE
+Status: 5 WARNINGs, 2 NOTEs

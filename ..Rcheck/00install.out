@@ -1,0 +1,17 @@
+* installing *source* package 'ctsim' ...
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+Warning: replacing previous import 'flexsurv::qgeneric' by 'msm::qgeneric' when loading 'ctsim'
+** help
+No man pages found in package  'ctsim' 
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+Warning: replacing previous import 'flexsurv::qgeneric' by 'msm::qgeneric' when loading 'ctsim'
+** testing if installed package can be loaded from final location
+Warning: replacing previous import 'flexsurv::qgeneric' by 'msm::qgeneric' when loading 'ctsim'
+** testing if installed package keeps a record of temporary installation path
+* DONE (ctsim)

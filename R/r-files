@@ -1,0 +1,6 @@
+1. `data_generation.R` - Core data structures and configuration functions
+2. `participant_generator.R` - Synthetic patient data generation functions
+3. `simulation_engine.R` - Contains the Simulation Engine Core Functions
+4. `bayesian_utils.R` - Will contain Bayesian update functions and priors
+5. `survival_models.R` - Will contain survival analysis models and related functions
+6. `visualization.R` - Will contain plotting and visualization functions
