@@ -532,17 +532,137 @@ apply_bayesian_updates <- function(sim_result) {
 #' @title Summarize results across multiple simulations
 #' 
 #' @param all_results List of simulation results
+#' @param metrics Metrics to include in summary
 #' @return Summary statistics across simulations
-summarize_simulations <- function(all_results) {
-  # Placeholder function - to be implemented
-  # This function will:
-  # - Calculate summary statistics across all simulations
-  # - Generate probability estimates of various outcomes
+summarize_simulations <- function(
+    all_results,
+    metrics = c("success_rate", "trial_duration", "hr", "events", "early_stopping")
+) {
+  # Ensure all_results is a list
+  if (!is.list(all_results)) {
+    stop("all_results must be a list of simulation results")
+  }
   
-  # This will be implemented in detail later
+  # Number of simulations
+  n_sims <- length(all_results)
+  
+  # Initialize summary statistics
   summary <- list(
-    message = "This is a placeholder. Simulation summary will be implemented."
+    n_sims = n_sims,
+    config = all_results[[1]]$config, # Use config from first simulation
+    metrics = metrics
   )
+  
+  # Create vectors to store key metrics
+  success <- numeric(n_sims)
+  trial_duration <- numeric(n_sims)
+  hazard_ratios <- numeric(n_sims)
+  hr_ci_lower <- numeric(n_sims)
+  hr_ci_upper <- numeric(n_sims)
+  p_values <- numeric(n_sims)
+  event_counts <- numeric(n_sims)
+  early_stopping <- logical(n_sims)
+  early_stopping_reason <- character(n_sims)
+  
+  # Extract metrics from each simulation
+  for (i in 1:n_sims) {
+    sim <- all_results[[i]]
+    
+    # Trial success
+    success[i] <- ifelse(is.null(sim$success), NA, sim$success)
+    
+    # Trial duration
+    trial_duration[i] <- ifelse(is.null(sim$trial_completion_time), NA, sim$trial_completion_time)
+    
+    # Hazard ratio and confidence interval
+    if (!is.null(sim$final_analysis) && !is.null(sim$final_analysis$hazard_ratio)) {
+      hazard_ratios[i] <- sim$final_analysis$hazard_ratio
+      hr_ci_lower[i] <- sim$final_analysis$hr_ci_lower
+      hr_ci_upper[i] <- sim$final_analysis$hr_ci_upper
+      p_values[i] <- sim$final_analysis$p_value
+    } else {
+      hazard_ratios[i] <- NA
+      hr_ci_lower[i] <- NA
+      hr_ci_upper[i] <- NA
+      p_values[i] <- NA
+    }
+    
+    # Event counts
+    event_counts[i] <- sim$event_count
+    
+    # Early stopping
+    early_stopping[i] <- ifelse(is.null(sim$trial_stopped_early), FALSE, sim$trial_stopped_early)
+    if (early_stopping[i] && !is.null(sim$stop_reason)) {
+      early_stopping_reason[i] <- sim$stop_reason
+    } else {
+      early_stopping_reason[i] <- "not_stopped"
+    }
+  }
+  
+  # Calculate success probability
+  summary$success_probability <- mean(success, na.rm = TRUE)
+  summary$success_ci <- binom.test(sum(success, na.rm = TRUE), sum(!is.na(success)))$conf.int
+  
+  # Calculate trial duration statistics
+  summary$avg_duration <- mean(trial_duration, na.rm = TRUE)
+  summary$median_duration <- median(trial_duration, na.rm = TRUE)
+  summary$min_duration <- min(trial_duration, na.rm = TRUE)
+  summary$max_duration <- max(trial_duration, na.rm = TRUE)
+  summary$sd_duration <- sd(trial_duration, na.rm = TRUE)
+  summary$study_durations <- trial_duration
+  
+  # Calculate hazard ratio statistics
+  summary$avg_hr <- mean(hazard_ratios, na.rm = TRUE)
+  summary$median_hr <- median(hazard_ratios, na.rm = TRUE)
+  summary$min_hr <- min(hazard_ratios, na.rm = TRUE)
+  summary$max_hr <- max(hazard_ratios, na.rm = TRUE)
+  summary$sd_hr <- sd(hazard_ratios, na.rm = TRUE)
+  summary$hazard_ratios <- hazard_ratios
+  
+  # Calculate power (proportion of p-values less than 0.05)
+  summary$power <- mean(p_values < 0.05, na.rm = TRUE)
+  
+  # Calculate event counts
+  summary$avg_events <- mean(event_counts, na.rm = TRUE)
+  summary$median_events <- median(event_counts, na.rm = TRUE)
+  
+  # Calculate early stopping probability
+  summary$early_stopping_probability <- mean(early_stopping, na.rm = TRUE)
+  
+  # Count early stopping reasons
+  if (any(early_stopping)) {
+    stop_reasons <- table(early_stopping_reason[early_stopping])
+    summary$stop_reasons <- as.list(stop_reasons / sum(stop_reasons))
+  }
+  
+  # Create data frame for easy plotting
+  summary_df <- data.frame(
+    simulation = 1:n_sims,
+    success = success,
+    duration = trial_duration,
+    hazard_ratio = hazard_ratios,
+    hr_lower = hr_ci_lower,
+    hr_upper = hr_ci_upper,
+    p_value = p_values,
+    events = event_counts,
+    early_stopping = early_stopping,
+    stop_reason = early_stopping_reason
+  )
+  
+  summary$summary_df <- summary_df
+  
+  # Create distribution of treatment effect
+  hr_quantiles <- quantile(hazard_ratios, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), na.rm = TRUE)
+  summary$hr_quantiles <- hr_quantiles
+  
+  # Calculate probability of clinically meaningful effect (HR < 0.8)
+  summary$prob_clinical_effect <- mean(hazard_ratios < 0.8, na.rm = TRUE)
+  
+  # Calculate type I error if truth is no effect (determined by scenario)
+  config_scenario <- all_results[[1]]$scenario
+  if (config_scenario == "baseline") {
+    summary$type_I_error <- summary$success_probability
+  }
   
   return(summary)
 }
@@ -584,20 +704,400 @@ plot_simulation_results <- function(
 #' @param sim_result Simulation results object
 #' @param format Output format ("csv", "rds", "report")
 #' @param file_path Path to save the output
+#' @param include_plots Whether to include plots in the report
 #' @return Invisible, the path where results were saved
 export_simulation_results <- function(
     sim_result,
     format = c("csv", "rds", "report"),
-    file_path = NULL
+    file_path = NULL,
+    include_plots = TRUE
 ) {
   format <- match.arg(format)
   
-  # Placeholder function - to be implemented
-  # This function will export results in various formats
+  # Generate default file path if not provided
+  if (is.null(file_path)) {
+    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    
+    if (inherits(sim_result, "trial_simulation")) {
+      # Single simulation
+      trial_name <- sim_result$config$trial_name
+      file_name <- paste0(trial_name, "_", timestamp)
+    } else {
+      # Summary of multiple simulations
+      file_name <- paste0("simulation_summary_", timestamp)
+    }
+    
+    base_dir <- "simulation_results"
+    if (!dir.exists(base_dir)) {
+      dir.create(base_dir, recursive = TRUE)
+    }
+    
+    file_path <- file.path(base_dir, file_name)
+  }
   
-  # This is a placeholder and will be expanded in the future
-  cat("Export to", format, "will be implemented\n")
+  if (format == "csv") {
+    # Export to CSV format
+    if (inherits(sim_result, "trial_simulation")) {
+      # Single simulation - export participant data
+      write.csv(sim_result$participants, paste0(file_path, "_participants.csv"), row.names = FALSE)
+      
+      # Export events data
+      write.csv(sim_result$events, paste0(file_path, "_events.csv"), row.names = FALSE)
+      
+      # Export final analysis results
+      if (!is.null(sim_result$final_analysis) && is.list(sim_result$final_analysis)) {
+        final_analysis_df <- as.data.frame(t(unlist(
+          sim_result$final_analysis[!sapply(sim_result$final_analysis, is.list)]
+        )))
+        write.csv(final_analysis_df, paste0(file_path, "_final_analysis.csv"), row.names = FALSE)
+      }
+      
+      cat("Exported participant data, events, and final analysis to CSV files\n")
+    } else {
+      # Summary of multiple simulations
+      write.csv(sim_result$summary_df, paste0(file_path, ".csv"), row.names = FALSE)
+      cat("Exported simulation summary to CSV file\n")
+    }
+  } else if (format == "rds") {
+    # Export to RDS format (R object)
+    saveRDS(sim_result, paste0(file_path, ".rds"))
+    cat("Exported simulation results to RDS file\n")
+  } else if (format == "report") {
+    # Create an R Markdown report
+    
+    # Check if rmarkdown package is available
+    if (!requireNamespace("rmarkdown", quietly = TRUE)) {
+      stop("The rmarkdown package is required to create reports. Please install it.")
+    }
+    
+    # Create the report content
+    report_content <- create_report_content(sim_result, include_plots)
+    
+    # Write the report to a temporary Rmd file
+    rmd_file <- paste0(file_path, ".Rmd")
+    writeLines(report_content, rmd_file)
+    
+    # Render the report to HTML
+    html_file <- paste0(file_path, ".html")
+    rmarkdown::render(rmd_file, output_file = html_file, quiet = TRUE)
+    
+    cat("Exported simulation report to HTML file:", html_file, "\n")
+  }
   
   return(invisible(file_path))
+}
+
+#' @title Create R Markdown report content for simulation results
+#' 
+#' @param sim_result Simulation results object
+#' @param include_plots Whether to include plots
+#' @return Character vector with R Markdown content
+create_report_content <- function(sim_result, include_plots = TRUE) {
+  # Start the R Markdown document
+  report <- c(
+    "---",
+    "title: \"Clinical Trial Simulation Report\"",
+    paste0("date: \"", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\""),
+    "output: html_document",
+    "---",
+    "",
+    "```{r setup, include=FALSE}",
+    "knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)",
+    "library(ggplot2)",
+    "library(knitr)",
+    "library(survival)",
+    "```",
+    ""
+  )
+  
+  if (inherits(sim_result, "trial_simulation")) {
+    # Single simulation report
+    report <- c(report, create_single_sim_report(sim_result, include_plots))
+  } else {
+    # Multiple simulations summary report
+    report <- c(report, create_multi_sim_report(sim_result, include_plots))
+  }
+  
+  return(report)
+}
+
+#' @title Create report content for a single simulation
+#' 
+#' @param sim_result Single simulation result
+#' @param include_plots Whether to include plots
+#' @return Character vector with R Markdown content
+create_single_sim_report <- function(sim_result, include_plots = TRUE) {
+  # Extract configuration
+  config <- sim_result$config
+  
+  # Create report sections
+  report <- c(
+    "## Trial Configuration",
+    "",
+    paste0("- **Trial Name**: ", config$trial_name),
+    paste0("- **Number of Subjects**: ", config$n_subjects),
+    paste0("- **Enrollment Rate**: ", config$enrollment_rate, " subjects per time unit"),
+    paste0("- **Follow-up Duration**: ", config$follow_up_duration, " time units"),
+    paste0("- **Events Required**: ", config$events_required),
+    "",
+    "### Treatment Arms",
+    ""
+  )
+  
+  # Add arm information
+  for (arm_name in names(config$arms)) {
+    arm <- config$arms[[arm_name]]
+    report <- c(report,
+      paste0("#### ", arm$name),
+      paste0("- **Allocation**: ", arm$allocation * 100, "%"),
+      paste0("- **Distribution**: ", arm$tte_distribution),
+      "",
+      "Parameters:",
+      ""
+    )
+    
+    for (param_name in names(arm$tte_params)) {
+      report <- c(report,
+        paste0("- **", param_name, "**: ", arm$tte_params[[param_name]])
+      )
+    }
+    
+    report <- c(report, "")
+  }
+  
+  # Add trial results
+  report <- c(report,
+    "## Trial Results",
+    "",
+    paste0("- **Scenario**: ", sim_result$scenario),
+    paste0("- **Trial Completion Time**: ", round(sim_result$trial_completion_time, 2), " time units"),
+    paste0("- **Event Count**: ", sim_result$event_count),
+    "",
+    "### Final Analysis",
+    ""
+  )
+  
+  # Add final analysis results
+  if (!is.null(sim_result$final_analysis) && is.list(sim_result$final_analysis)) {
+    # Extract key metrics
+    if (!is.null(sim_result$final_analysis$hazard_ratio)) {
+      hr <- sim_result$final_analysis$hazard_ratio
+      hr_ci_lower <- sim_result$final_analysis$hr_ci_lower
+      hr_ci_upper <- sim_result$final_analysis$hr_ci_upper
+      p_value <- sim_result$final_analysis$p_value
+      
+      report <- c(report,
+        paste0("- **Hazard Ratio**: ", round(hr, 2), " (95% CI: ", 
+               round(hr_ci_lower, 2), " - ", round(hr_ci_upper, 2), ")"),
+        paste0("- **p-value**: ", format.pval(p_value, digits = 3)),
+        paste0("- **Trial Result**: ", ifelse(p_value < 0.05, "Success", "Failure")),
+        ""
+      )
+    } else {
+      report <- c(report,
+        "- **Note**: Final analysis details not available",
+        ""
+      )
+    }
+  }
+  
+  # Add interim analyses information
+  if (length(sim_result$analyses) > 0) {
+    report <- c(report,
+      "### Interim Analyses",
+      "",
+      "| Analysis | Time | Events | Hazard Ratio | p-value | Decision |",
+      "|----------|------|--------|--------------|---------|----------|"
+    )
+    
+    for (i in seq_along(sim_result$analyses)) {
+      analysis <- sim_result$analyses[[i]]
+      
+      # Format row data
+      time <- round(analysis$time, 2)
+      events <- analysis$event_count
+      
+      if (!is.null(analysis$hazard_ratio)) {
+        hr <- round(analysis$hazard_ratio, 2)
+        p <- format.pval(analysis$p_value, digits = 3)
+      } else {
+        hr <- "N/A"
+        p <- "N/A"
+      }
+      
+      if (!is.null(analysis$stop_trial)) {
+        decision <- ifelse(analysis$stop_trial, 
+                          paste0("Stop (", ifelse(analysis$stop_for_efficacy, "efficacy", "futility"), ")"),
+                          "Continue")
+      } else {
+        decision <- "Continue"
+      }
+      
+      report <- c(report,
+        paste0("| ", i, " | ", time, " | ", events, " | ", hr, " | ", p, " | ", decision, " |")
+      )
+    }
+    
+    report <- c(report, "")
+  }
+  
+  # Add plots if requested
+  if (include_plots) {
+    report <- c(report,
+      "## Visualizations",
+      "",
+      "### Kaplan-Meier Curve",
+      "",
+      "```{r km-plot, fig.width=10, fig.height=6}",
+      "# Load visualization functions",
+      "source('R/visualization.R')",
+      "# Create KM plot",
+      "plot_km_curve(sim_result)",
+      "```",
+      "",
+      "### Enrollment Over Time",
+      "",
+      "```{r enrollment-plot, fig.width=10, fig.height=6}",
+      "plot_enrollment(sim_result)",
+      "```",
+      "",
+      "### Events Over Time",
+      "",
+      "```{r events-plot, fig.width=10, fig.height=6}",
+      "plot_events(sim_result)",
+      "```"
+    )
+    
+    # Add Bayesian plots if available
+    if (!is.null(sim_result$bayesian_updates) && 
+        is.list(sim_result$bayesian_updates) &&
+        !is.null(sim_result$bayesian_updates$hr_posterior)) {
+      
+      report <- c(report,
+        "",
+        "### Bayesian Analysis",
+        "",
+        "```{r bayesian-hr-plot, fig.width=10, fig.height=6}",
+        "plot_bayesian_posterior(sim_result, parameter = 'hr')",
+        "```",
+        "",
+        "```{r bayesian-efficacy-plot, fig.width=10, fig.height=6}",
+        "plot_bayesian_posterior(sim_result, parameter = 'efficacy')",
+        "```"
+      )
+    }
+  }
+  
+  return(report)
+}
+
+#' @title Create report content for multiple simulations
+#' 
+#' @param sim_summary Summary of multiple simulations
+#' @param include_plots Whether to include plots
+#' @return Character vector with R Markdown content
+create_multi_sim_report <- function(sim_summary, include_plots = TRUE) {
+  # Extract configuration from first simulation
+  config <- sim_summary$config
+  
+  # Create report sections
+  report <- c(
+    "## Simulation Configuration",
+    "",
+    paste0("- **Trial Configuration**: ", config$trial_name),
+    paste0("- **Number of Simulations**: ", sim_summary$n_sims),
+    paste0("- **Number of Subjects per Trial**: ", config$n_subjects),
+    "",
+    "## Simulation Results",
+    "",
+    "### Key Metrics",
+    "",
+    paste0("- **Success Probability**: ", round(sim_summary$success_probability * 100, 1), "% (95% CI: ", 
+           round(sim_summary$success_ci[1] * 100, 1), "% - ", 
+           round(sim_summary$success_ci[2] * 100, 1), "%)"),
+    paste0("- **Power**: ", round(sim_summary$power * 100, 1), "%"),
+    paste0("- **Probability of Clinically Meaningful Effect (HR < 0.8)**: ", 
+           round(sim_summary$prob_clinical_effect * 100, 1), "%"),
+    "",
+    "### Trial Duration",
+    "",
+    paste0("- **Average Duration**: ", round(sim_summary$avg_duration, 2), " time units"),
+    paste0("- **Median Duration**: ", round(sim_summary$median_duration, 2), " time units"),
+    paste0("- **Min Duration**: ", round(sim_summary$min_duration, 2), " time units"),
+    paste0("- **Max Duration**: ", round(sim_summary$max_duration, 2), " time units"),
+    "",
+    "### Treatment Effect",
+    "",
+    paste0("- **Average Hazard Ratio**: ", round(sim_summary$avg_hr, 2)),
+    paste0("- **Median Hazard Ratio**: ", round(sim_summary$median_hr, 2)),
+    paste0("- **Hazard Ratio 95% CI**: (", 
+           round(sim_summary$hr_quantiles[1], 2), " - ", 
+           round(sim_summary$hr_quantiles[5], 2), ")"),
+    ""
+  )
+  
+  # Add early stopping information if applicable
+  if (!is.null(sim_summary$early_stopping_probability)) {
+    report <- c(report,
+      "### Early Stopping",
+      "",
+      paste0("- **Early Stopping Probability**: ", 
+             round(sim_summary$early_stopping_probability * 100, 1), "%"),
+      ""
+    )
+    
+    if (!is.null(sim_summary$stop_reasons)) {
+      report <- c(report, "#### Stopping Reasons", "", "| Reason | Probability |", "|--------|------------|")
+      
+      for (reason in names(sim_summary$stop_reasons)) {
+        prob <- round(sim_summary$stop_reasons[[reason]] * 100, 1)
+        report <- c(report, paste0("| ", reason, " | ", prob, "% |"))
+      }
+      
+      report <- c(report, "")
+    }
+  }
+  
+  # Add plots if requested
+  if (include_plots) {
+    report <- c(report,
+      "## Visualizations",
+      "",
+      "### Distribution of Hazard Ratios",
+      "",
+      "```{r hr-dist-plot, fig.width=10, fig.height=6}",
+      "# Load visualization functions",
+      "source('R/visualization.R')",
+      "# Create hazard ratio distribution plot",
+      "plot_simulation_summary(sim_summary, metric = 'hazard_ratio')",
+      "```",
+      "",
+      "### Distribution of Study Duration",
+      "",
+      "```{r duration-dist-plot, fig.width=10, fig.height=6}",
+      "plot_simulation_summary(sim_summary, metric = 'study_duration')",
+      "```",
+      "",
+      "### Success Probability",
+      "",
+      "```{r success-plot, fig.width=8, fig.height=6}",
+      "plot_simulation_summary(sim_summary, metric = 'success_rate')",
+      "```"
+    )
+    
+    # Add early stopping plot if applicable
+    if (!is.null(sim_summary$early_stopping_probability)) {
+      report <- c(report,
+        "",
+        "### Early Stopping Probability",
+        "",
+        "```{r early-stopping-plot, fig.width=8, fig.height=6}",
+        "plot_simulation_summary(sim_summary, metric = 'early_stopping')",
+        "```"
+      )
+    }
+  }
+  
+  return(report)
 }
 
