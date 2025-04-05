@@ -450,15 +450,81 @@ run_final_analysis <- function(sim_result) {
 #' @param sim_result Simulation results object
 #' @return Updated simulation results with Bayesian posterior updates
 apply_bayesian_updates <- function(sim_result) {
-  # Placeholder function - to be implemented
-  # This function will:
-  # - Use prior information and new data to update parameter estimates
-  # - Apply Bayesian methods for updating the model
+  # Extract configuration and data
+  config <- sim_result$config
+  participants <- sim_result$participants
   
-  # This will be implemented in detail later
-  sim_result$bayesian_updates <- list(
-    message = "This is a placeholder. Bayesian updates will be implemented."
-  )
+  # Check if prior data is available
+  if (is.null(config$prior_data)) {
+    sim_result$bayesian_updates <- list(
+      message = "No prior data provided for Bayesian updates."
+    )
+    return(sim_result)
+  }
+  
+  # Initialize Bayesian updates list
+  bayesian_updates <- list()
+  
+  # Extract treatment arm prior if available
+  if (!is.null(config$arms$treatment$prior) && 
+      inherits(config$arms$treatment$prior, "bayesian_prior")) {
+    
+    # Get treatment effect prior
+    hr_prior <- config$arms$treatment$prior
+    
+    try({
+      # Update prior with current data
+      hr_posterior <- update_prior(
+        prior = hr_prior,
+        data = participants,
+        formula = Surv(observed_time, event_status) ~ arm
+      )
+      
+      # Calculate probability of efficacy
+      prob_efficacy <- calculate_effect_probability(hr_posterior, threshold = log(0.8))
+      
+      # Store posterior distribution
+      bayesian_updates$hr_posterior <- hr_posterior
+      bayesian_updates$prob_efficacy <- prob_efficacy
+      
+      # Generate predictive survival curves
+      newdata <- data.frame(
+        arm = c("control", "treatment"),
+        stringsAsFactors = FALSE
+      )
+      predicted_survival <- predict_survival(hr_posterior, newdata)
+      bayesian_updates$predicted_survival <- predicted_survival
+      
+      # Calculate probability of superiority
+      bayesian_updates$prob_superiority <- calculate_effect_probability(hr_posterior, threshold = 0)
+      
+      # Simulate adaptive randomization for future subjects
+      if (config$n_subjects > nrow(participants)) {
+        future_n <- config$n_subjects - nrow(participants)
+        adaptive_rand <- adaptive_randomization(hr_posterior, future_n)
+        bayesian_updates$adaptive_randomization <- adaptive_rand
+      }
+    }, silent = TRUE)
+  }
+  
+  # Check for dropout rate prior
+  if (!is.null(config$prior_data$dropout_prior)) {
+    # Placeholder for dropout rate update
+    # This would be implemented with beta-binomial conjugate analysis
+    bayesian_updates$dropout_update <- list(
+      message = "Dropout rate update would be implemented here."
+    )
+  }
+  
+  # If Bayesian updates failed, return a message
+  if (length(bayesian_updates) == 0) {
+    bayesian_updates <- list(
+      message = "Bayesian updates failed or no valid priors were found."
+    )
+  }
+  
+  # Update simulation results
+  sim_result$bayesian_updates <- bayesian_updates
   
   return(sim_result)
 }
