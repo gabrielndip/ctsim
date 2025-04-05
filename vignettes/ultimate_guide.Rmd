@@ -319,44 +319,186 @@ str(basic_config, max.level = 2)
 
 Now we'll run the simulation based on our configuration:
 
-```{r run_basic_sim, eval=FALSE}
-# Run the simulation
-sim_results <- run_trial_simulation(
-  basic_config,
-  n_sims = 1,  # Single simulation for this example
-  scenario = "baseline",
-  verbose = TRUE
-)
-```
+```{r run_basic_sim}
+# Generate trial participants
+participants <- generate_participants(basic_config, scenario = "baseline")
 
-Note: This code block is set to not evaluate (`eval=FALSE`) since the simulation functions are still being implemented in the package. In a complete implementation, this would produce a comprehensive set of results.
+# Create simulation results object
+sim_result <- create_simulation_results(basic_config)
+sim_result$participants <- participants
 
-### Step 3: Analyze the Results
+# Run trial simulation
+sim_result <- simulate_trial_events(sim_result)
+sim_result <- run_interim_analyses(sim_result)
+sim_result <- run_final_analysis(sim_result)
 
-After running the simulation, we would analyze the results:
+# View key results
+cat("Trial completion time:", sim_result$trial_completion_time, "months\n")
+cat("Number of events:", sim_result$event_count, "out of", basic_config$events_required, "required\n")
 
-```{r analyze_results, eval=FALSE}
-# Summary of key outcomes
-summary(sim_results)
-
-# Plot Kaplan-Meier curves from the simulation
-plot_simulation_results(sim_results, plot_type = "km")
-
-# Plot enrollment over time
-plot_simulation_results(sim_results, plot_type = "enrollment")
-
-# Check if the trial stopped at interim analysis
-if (length(sim_results$analyses) > 0 && !is.null(sim_results$analyses[[1]]$decision)) {
-  cat("Trial stopped at interim analysis: ", sim_results$analyses[[1]]$decision, "\n")
-} else {
-  cat("Trial continued to final analysis\n")
+if (length(sim_result$analyses) > 0) {
+  cat("Interim analysis was conducted at", sim_result$analyses[[1]]$time, "months\n")
+  if (!is.null(sim_result$analyses[[1]]$stop_trial) && sim_result$analyses[[1]]$stop_trial) {
+    cat("Trial stopped early at interim analysis\n")
+  } else {
+    cat("Trial continued to completion after interim analysis\n")
+  }
 }
 
-# Get the hazard ratio estimate and confidence interval
-final_hr <- sim_results$final_analysis$hazard_ratio
-final_hr_ci <- sim_results$final_analysis$hr_confidence_interval
-cat("Estimated hazard ratio: ", final_hr, " (95% CI: ", 
-    final_hr_ci[1], "-", final_hr_ci[2], ")\n")
+if (!is.null(sim_result$final_analysis$hazard_ratio)) {
+  cat("Final Hazard Ratio:", round(sim_result$final_analysis$hazard_ratio, 2), 
+      "(95% CI:", round(sim_result$final_analysis$hr_ci_lower, 2), "-", 
+      round(sim_result$final_analysis$hr_ci_upper, 2), ")\n")
+  cat("p-value:", format.pval(sim_result$final_analysis$p_value, digits = 3), "\n")
+}
+```
+
+### Step 3: Visualize the Results
+
+The `ctsim` package provides various visualization functions to help understand the simulation results:
+
+```{r visualize_results}
+# Create custom KM plot function for the vignette
+plot_km <- function(participants) {
+  require(survival)
+  require(ggplot2)
+  
+  # Fit K-M model
+  km_fit <- survfit(Surv(observed_time, event_status) ~ arm, data = participants)
+  
+  # Create data frame for plotting
+  km_df <- data.frame(
+    time = km_fit$time,
+    surv = km_fit$surv,
+    strata = rep(c("control", "treatment"), 
+                 times = c(length(km_fit$time)/2, length(km_fit$time)/2))
+  )
+  
+  # Create plot
+  ggplot(km_df, aes(x = time, y = surv, color = strata)) +
+    geom_step(linewidth = 1) +
+    scale_color_manual(
+      name = "Study Arm",
+      values = c("control" = "#1F78B4", "treatment" = "#33A02C"),
+      labels = c("Standard of Care", "New Treatment")
+    ) +
+    labs(
+      title = "Kaplan-Meier Survival Curves",
+      x = "Time (months)",
+      y = "Survival Probability"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom") +
+    coord_cartesian(ylim = c(0, 1))
+}
+
+# Create enrollment plot function for the vignette
+plot_enrollment_curve <- function(events) {
+  require(ggplot2)
+  
+  # Filter for enrollment events
+  enrollment_events <- events[events$event_type == "enrollment", ]
+  
+  # Sort by time
+  enrollment_events <- enrollment_events[order(enrollment_events$time), ]
+  
+  # Create cumulative enrollment
+  enrollment_events$cumulative <- 1:nrow(enrollment_events)
+  
+  # Create plot
+  ggplot(enrollment_events, aes(x = time, y = cumulative)) +
+    geom_step(color = "#1F78B4", linewidth = 1) +
+    labs(
+      title = "Cumulative Enrollment Over Time",
+      x = "Time (months)",
+      y = "Number of Patients Enrolled"
+    ) +
+    theme_minimal()
+}
+
+# Create events plot function for the vignette
+plot_events_curve <- function(events) {
+  require(ggplot2)
+  
+  # Filter for event events
+  event_events <- events[events$event_type == "event", ]
+  
+  # Sort by time
+  event_events <- event_events[order(event_events$time), ]
+  
+  # Create cumulative events
+  event_events$cumulative <- 1:nrow(event_events)
+  
+  # Create plot
+  ggplot(event_events, aes(x = time, y = cumulative)) +
+    geom_step(color = "#1F78B4", linewidth = 1) +
+    geom_hline(yintercept = basic_config$events_required, 
+               linetype = "dashed", color = "red") +
+    labs(
+      title = "Cumulative Events Over Time",
+      x = "Time (months)",
+      y = "Number of Events"
+    ) +
+    theme_minimal()
+}
+
+# Plot results
+plot_km(sim_result$participants)
+plot_enrollment_curve(sim_result$events)
+plot_events_curve(sim_result$events)
+```
+
+### Step 4: Run Multiple Simulations
+
+To evaluate the operating characteristics of the trial design, we can run multiple simulations:
+
+```{r multi_sim}
+# Function to run a complete simulation
+run_full_simulation <- function(config, scenario = "baseline") {
+  # Generate participants
+  participants <- generate_participants(config, scenario = scenario)
+  
+  # Create and populate simulation result
+  sim_result <- create_simulation_results(config)
+  sim_result$participants <- participants
+  sim_result$scenario <- scenario
+  
+  # Run simulation steps
+  sim_result <- simulate_trial_events(sim_result)
+  sim_result <- run_interim_analyses(sim_result)
+  sim_result <- run_final_analysis(sim_result)
+  
+  return(sim_result)
+}
+
+# Run 5 simulations (for demonstration; typically would run 100+)
+n_sims <- 5
+all_results <- list()
+
+for (i in 1:n_sims) {
+  all_results[[i]] <- run_full_simulation(basic_config, scenario = "baseline")
+}
+
+# Summarize results
+summary_results <- summarize_simulations(all_results)
+
+# Display key summary metrics
+cat("Success rate:", round(summary_results$success_probability * 100, 1), "%\n")
+cat("Average hazard ratio:", round(summary_results$avg_hr, 2), "\n")
+cat("Average study duration:", round(summary_results$avg_duration, 1), "months\n")
+cat("Early stopping rate:", round(summary_results$early_stopping_probability * 100, 1), "%\n")
+```
+
+### Step 5: Export Results
+
+We can export the simulation results in various formats for further analysis or reporting:
+
+```{r export_results, eval=FALSE}
+# Export a single simulation to CSV
+export_simulation_results(sim_result, format = "csv")
+
+# Export simulation summary to a report
+export_simulation_results(summary_results, format = "report")
 ```
 
 ## 4.2 Understanding Simulation Output
